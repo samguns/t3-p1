@@ -9,6 +9,7 @@
 #include "Eigen-3.3/Eigen/QR"
 #include "json.hpp"
 #include "spline.h"
+#include "vehicle.h"
 
 using namespace std;
 
@@ -206,7 +207,10 @@ int main() {
 
   double ref_vel = 0;
 
-  h.onMessage([&lane, &ref_vel, &map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+  Vehicle ego_vehicle;
+  ego_vehicle.configure(49.5, lane, {0, 1, 2});
+
+  h.onMessage([&ego_vehicle, &lane, &ref_vel, &map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
@@ -250,6 +254,10 @@ int main() {
           if (prev_size > 0) {
             car_s = end_path_s;
           }
+
+          int goal_lane;
+          double goal_vel;
+          ego_vehicle.getNextBehavior(prev_size, sensor_fusion, goal_lane, goal_vel);
 
           bool too_close = false;
 
@@ -339,7 +347,7 @@ int main() {
           tk::spline spl;
           spl.set_points(ptsx, ptsy);
 
-          // Define the actual (x, y) points we will us for the planner
+          // Define the actual (x, y) points we will use for the planner
           vector<double> next_x_vals;
           vector<double> next_y_vals;
 
