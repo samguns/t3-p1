@@ -19,13 +19,15 @@
 #define TIME_INTERVAL             0.02
 
 #define SAFE_DISTANCE_AHEAD_IN_S  30
-#define SAFE_DISTANCE_BEHIND_IN_S 20
+#define SAFE_DISTANCE_BEHIND_IN_S 15
 #define MAX_ALLOWED_ACCEL         0.224
 
 #define LANE_WIDTH                4
 #define LANE_HALF_WIDTH           2
 
 #define MAX_NOF_LANES             3
+
+#define MIN_STAY_IN_LANE_PERIOD   100
 
 
 using namespace std;
@@ -107,7 +109,8 @@ class Vehicle {
   double mS;
   double mD;
   double mVelocity;
-  double mAcceleration;
+
+  int mMinStayInLaneCount;
 
   vector<int> successor_states();
   void generate_prediction(int prev_size);

@@ -12,7 +12,7 @@
 
 
 Vehicle::Vehicle() :
-  mCurrentState(STATE_INIT)
+  mCurrentState(STATE_INIT), mMinStayInLaneCount(0)
 {}
 
 Vehicle::Vehicle(vector<double> sensored_state) :
@@ -83,6 +83,13 @@ void Vehicle::getNextBehavior(int prev_size, vector<vector<double>> sensor_fusio
   this->mCurrentLane = best_trajectory[1].getCurrentLane();
   this->mVelocity = best_trajectory[1].getVelocity();
 
+  /* Start a timer to protect ego vehicle from seemingly consecutive lane changing.
+   */
+  if (this->mCurrentState == STATE_LANE_CHANGE_LEFT ||
+      this->mCurrentState == STATE_LANE_CHANGE_RIGHT) {
+    this->mMinStayInLaneCount = MIN_STAY_IN_LANE_PERIOD;
+  }
+
   goal_lane = this->mCurrentLane;
   goal_v = this->mVelocity;
 }
@@ -108,6 +115,11 @@ vector<int> Vehicle::successor_states() {
   vector<int> states;
 
   states.push_back(STATE_KEEP_LANE);
+
+  if (mMinStayInLaneCount > 0) {
+    mMinStayInLaneCount--;
+    return states;
+  }
 
   switch (mCurrentState) {
     case STATE_KEEP_LANE:
