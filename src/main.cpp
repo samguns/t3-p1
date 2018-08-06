@@ -257,34 +257,40 @@ int main() {
 
           int goal_lane;
           double goal_vel;
+          ego_vehicle.update(car_s, car_speed);
           ego_vehicle.getNextBehavior(prev_size, sensor_fusion, goal_lane, goal_vel);
+          cout << "current lane: " << lane << " fsm lane: " << goal_lane << endl;
+          cout << "current refv: " << ref_vel << " fsm v: " << goal_vel << endl;
 
-          bool too_close = false;
+          ref_vel = goal_vel;
+          lane = goal_lane;
+
+//          bool too_close = false;
 
           // Find ref_v to use
-          for (int i = 0; i < sensor_fusion.size(); i++) {
-            // If a car is in my lane
-            float d = sensor_fusion[i][6];
-            if (d < (2 + 4 * lane + 2) && d > (2 + 4 * lane - 2)) {
-              double vx = sensor_fusion[i][3];
-              double vy = sensor_fusion[i][4];
-              double check_speed = sqrt(vx * vx + vy * vy);
-              double check_car_s = sensor_fusion[i][5];
-
-              // Project this car's S in 0.02s later
-              check_car_s += ((double)prev_size * 0.02 * check_speed);
-
-              if (check_car_s > car_s && (check_car_s - car_s) < 30) {
-                too_close = true;
-              }
-            }
-          }
-
-          if (too_close) {
-            ref_vel -= 0.224;
-          } else if (ref_vel < 49.5) {
-            ref_vel += 0.224;
-          }
+//          for (int i = 0; i < sensor_fusion.size(); i++) {
+//            // If a car is in my lane
+//            float d = sensor_fusion[i][6];
+//            if (d < (2 + 4 * lane + 2) && d > (2 + 4 * lane - 2)) {
+//              double vx = sensor_fusion[i][3];
+//              double vy = sensor_fusion[i][4];
+//              double check_speed = sqrt(vx * vx + vy * vy);
+//              double check_car_s = sensor_fusion[i][5];
+//
+//              // Project this car's S in 0.02s later
+//              check_car_s += ((double)prev_size * 0.02 * check_speed);
+//
+//              if (check_car_s > car_s && (check_car_s - car_s) < 30) {
+//                too_close = true;
+//              }
+//            }
+//          }
+//
+//          if (too_close) {
+//            ref_vel -= 0.224;
+//          } else if (ref_vel < 49.5) {
+//            ref_vel += 0.224;
+//          }
 
           vector<double> ptsx;
           vector<double> ptsy;

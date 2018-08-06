@@ -5,7 +5,9 @@
 //
 
 #include <math.h>
+#include <algorithm>
 #include "vehicle.h"
+#include "cost.h"
 
 
 Vehicle::Vehicle() :
@@ -19,6 +21,13 @@ Vehicle::Vehicle(vector<double> sensored_state) :
   double vy = sensored_state[SENSOR_FUSION_VY_IDX];
 
   mVelocity = sqrt(vx*vx + vy*vy);
+
+  for (int lane = 0; lane < MAX_NOF_LANES; lane++) {
+    if (mD < (LANE_HALF_WIDTH + LANE_WIDTH * lane + LANE_HALF_WIDTH) &&
+        mD > (LANE_HALF_WIDTH + LANE_WIDTH * lane - LANE_HALF_WIDTH)) {
+      mCurrentLane = lane;
+    }
+  }
 }
 
 Vehicle::Vehicle(int lane, double s, double v, int state) :
@@ -30,6 +39,11 @@ void Vehicle::configure(double max_speed, int currentLane, vector<int> lanes) {
   mLeftMostLane = lanes[0];
   mRightMostLane = lanes[mNumberOfLanes-1];
   mCurrentLane = currentLane;
+}
+
+void Vehicle::update(double s, double v) {
+  mS = s;
+  mVelocity = v;
 }
 
 void Vehicle::getNextBehavior(int prev_size, vector<vector<double>> sensor_fusion,
@@ -47,10 +61,45 @@ void Vehicle::getNextBehavior(int prev_size, vector<vector<double>> sensor_fusio
   /* Iterate all possible behaviors for ego vehicle.
    * Calculate cost for every behavior.
    */
+  double cost;
+  vector<double> costs;
+  vector<vector<Vehicle>> final_trajectories;
   vector<int> states = successor_states();
   for (const int& state : states) {
     vector<Vehicle> trajectory = generate_trajectory(state, predictions);
+    if (!trajectory.empty()) {
+      cost = calculate_cost(trajectory);
+      costs.push_back(cost);
+      final_trajectories.push_back(trajectory);
+    }
   }
+
+  vector<double>::iterator best_cost = min_element(begin(costs), end(costs));
+  int best_idx = distance(begin(costs), best_cost);
+
+  vector<Vehicle> best_trajectory = final_trajectories[best_idx];
+  this->mCurrentState = best_trajectory[1].getCurrentState();
+  this->mCurrentLane = best_trajectory[1].getCurrentLane();
+  this->mVelocity = best_trajectory[1].getVelocity();
+
+  goal_lane = this->mCurrentLane;
+  goal_v = this->mVelocity;
+}
+
+int Vehicle::getCurrentState() {
+  return mCurrentState;
+}
+
+int Vehicle::getCurrentLane() {
+  return mCurrentLane;
+}
+
+double Vehicle::getS() {
+  return mS;
+}
+
+double Vehicle::getVelocity() {
+  return mVelocity;
 }
 
 
@@ -129,20 +178,65 @@ vector<Vehicle> Vehicle::keep_lane_trajectory(map<int, Vehicle>& predictions) {
 }
 
 vector<Vehicle> Vehicle::lane_change_trajectory(int state,
-    map<int, Vehicle>& predictions) {}
+    map<int, Vehicle>& predictions) {
+  vector<Vehicle> trajectory;
+  int new_lane = this->mCurrentLane + lane_direction[state];
+  Vehicle next_lane_vehicle;
+  map<int, Vehicle>::const_iterator it;
+
+  for (it = predictions.begin(); it != predictions.end(); ++it) {
+    next_lane_vehicle = it->second;
+    if (next_lane_vehicle.mS == this->mS &&
+        next_lane_vehicle.mCurrentLane == new_lane) {
+      // There's a potential collision in new_lane, return empty trajectory.
+      return trajectory;
+    }
+  }
+
+  trajectory.emplace_back(Vehicle(this->mCurrentLane, this->mS, this->mVelocity, this->mCurrentState));
+  vector<double> kinematics = get_kinematics(new_lane, predictions);
+  trajectory.emplace_back(Vehicle(new_lane, kinematics[0], kinematics[1], state));
+
+  return trajectory;
+}
 
 vector<Vehicle> Vehicle::prep_lane_change_trajectory(int state,
-    map<int, Vehicle>& predictions) {}
+    map<int, Vehicle>& predictions) {
+  double new_s;
+  double new_v;
+  vector<Vehicle> trajectory = {Vehicle(this->mCurrentLane, this->mS, this->mVelocity, this->mCurrentState)};
+
+  vector<double> curr_lane_kinematics = get_kinematics(this->mCurrentLane, predictions);
+
+  int new_lane = this->mCurrentLane + lane_direction[state];
+  Vehicle vehicle_behind;
+  bool vehicle_behind_too_close = get_vehicle_behind(new_lane, predictions, vehicle_behind);
+  if (vehicle_behind_too_close) {
+    new_s = curr_lane_kinematics[0];
+    new_v = curr_lane_kinematics[1];
+  } else {
+    vector<double> new_lane_kinematics = get_kinematics(new_lane, predictions);
+    if (new_lane_kinematics[1] < curr_lane_kinematics[1]) {
+      new_s = curr_lane_kinematics[0];
+      new_v = curr_lane_kinematics[1];
+    } else {
+      new_s = new_lane_kinematics[0];
+      new_v = new_lane_kinematics[1];
+    }
+  }
+
+  trajectory.emplace_back(this->mCurrentLane, new_s, new_v, state);
+
+  return trajectory;
+}
 
 vector<double> Vehicle::get_kinematics(int lane,
     map<int, Vehicle>& predictions) {
   Vehicle vehicle_ahead;
-  // Vehicle vehicle_behind;
   double new_position;
   double new_velocity;
 
   bool vehicle_ahead_too_close = get_vehicle_ahead(lane, predictions, vehicle_ahead);
-  //bool vehicle_behind_too_close = get_vehicle_behind(lane, predictions, vehicle_behind);
   if (vehicle_ahead_too_close) {
     new_velocity = vehicle_ahead.mVelocity;
     /* Slow down our ego vehicle, but try to avoid jerk */
@@ -152,6 +246,7 @@ vector<double> Vehicle::get_kinematics(int lane,
   } else {
     new_velocity = this->mVelocity;
 
+    /* Accelerate our ego vehicle, but try to avoid jerk */
     if (this->mVelocity < this->mMaxSpeedLimit) {
       new_velocity += MAX_ALLOWED_ACCEL;
     }
@@ -174,9 +269,10 @@ bool Vehicle::get_vehicle_ahead(int lane,
   for (it = predictions.begin(); it != predictions.end(); ++it) {
     temp_vehicle = it->second;
 
-    if (temp_vehicle.mD < (2 + 4 * lane + 2) && temp_vehicle.mD > (2 + 4 * lane - 2)) {
+    if (temp_vehicle.mD < (LANE_HALF_WIDTH + LANE_WIDTH * lane + LANE_HALF_WIDTH) &&
+        temp_vehicle.mD > (LANE_HALF_WIDTH + LANE_WIDTH * lane - LANE_HALF_WIDTH)) {
       if (temp_vehicle.mS > this->mS &&
-          (temp_vehicle.mS - this->mS) < SAFE_DISTANCE_IN_S) {
+          (temp_vehicle.mS - this->mS) < SAFE_DISTANCE_AHEAD_IN_S) {
         ahead = temp_vehicle;
         found = true;
         break;
@@ -199,9 +295,10 @@ bool Vehicle::get_vehicle_behind(int lane,
   for (it = predictions.begin(); it != predictions.end(); ++it) {
     temp_vehicle = it->second;
 
-    if (temp_vehicle.mD < (2 + 4 * lane + 2) && temp_vehicle.mD > (2 + 4 * lane - 2)) {
+    if (temp_vehicle.mD < (LANE_HALF_WIDTH + LANE_WIDTH * lane + LANE_HALF_WIDTH) &&
+        temp_vehicle.mD > (LANE_HALF_WIDTH + LANE_WIDTH * lane - LANE_HALF_WIDTH)) {
       if (this->mS > temp_vehicle.mS &&
-          (this->mS - temp_vehicle.mS) < SAFE_DISTANCE_IN_S) {
+          (this->mS - temp_vehicle.mS) < SAFE_DISTANCE_BEHIND_IN_S) {
         behind = temp_vehicle;
         found = true;
         break;
