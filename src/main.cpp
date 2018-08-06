@@ -255,15 +255,8 @@ int main() {
             car_s = end_path_s;
           }
 
-          int goal_lane;
-          double goal_vel;
-          ego_vehicle.update(car_s, car_speed);
-          ego_vehicle.getNextBehavior(prev_size, sensor_fusion, goal_lane, goal_vel);
-          cout << "current lane: " << lane << " fsm lane: " << goal_lane << endl;
-          cout << "current refv: " << ref_vel << " fsm v: " << goal_vel << endl;
-
-          ref_vel = goal_vel;
-          lane = goal_lane;
+          ego_vehicle.update(car_s, ref_vel);
+          ego_vehicle.getNextBehavior(prev_size, sensor_fusion, lane, ref_vel);
 
 //          bool too_close = false;
 

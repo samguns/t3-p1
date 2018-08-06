@@ -4,6 +4,7 @@
 // Created by Sam on 2018/8/4.
 //
 
+#include <iostream>
 #include <math.h>
 #include <algorithm>
 #include "vehicle.h"
@@ -110,8 +111,14 @@ vector<int> Vehicle::successor_states() {
 
   switch (mCurrentState) {
     case STATE_KEEP_LANE:
-      states.push_back(STATE_PREP_LANE_CHANGE_LEFT);
-      states.push_back(STATE_PREP_LANE_CHANGE_RIGHT);
+      if (mCurrentLane != mLeftMostLane) {
+        states.push_back(STATE_PREP_LANE_CHANGE_LEFT);
+      }
+
+      if (mCurrentLane != mRightMostLane) {
+        states.push_back(STATE_PREP_LANE_CHANGE_RIGHT);
+      }
+
       break;
 
     case STATE_PREP_LANE_CHANGE_LEFT:
