@@ -12,7 +12,7 @@
 
 
 Vehicle::Vehicle() :
-  mCurrentState(STATE_INIT), mMinStayInLaneCount(0)
+  mCurrentState(STATE_INIT), mMinStayInLaneCount(0), mAcceleration(0)
 {}
 
 Vehicle::Vehicle(vector<double> sensored_state) :
@@ -31,8 +31,9 @@ Vehicle::Vehicle(vector<double> sensored_state) :
   }
 }
 
-Vehicle::Vehicle(int lane, double s, double v, int state) :
-  mCurrentLane(lane), mS(s), mVelocity(v), mCurrentState(state) {}
+Vehicle::Vehicle(int lane, double s, double v, double a, int state) :
+  mCurrentLane(lane), mS(s), mVelocity(v), mCurrentState(state),
+  mAcceleration(a) {}
 
 void Vehicle::configure(double max_speed, int currentLane, vector<int> lanes) {
   mMaxSpeedLimit = max_speed;
@@ -44,7 +45,7 @@ void Vehicle::configure(double max_speed, int currentLane, vector<int> lanes) {
 
 void Vehicle::update(double s, double v) {
   mS = s;
-  mVelocity = v;
+  //mVelocity = v;
 }
 
 void Vehicle::getNextBehavior(int prev_size, vector<vector<double>> sensor_fusion,
@@ -54,10 +55,17 @@ void Vehicle::getNextBehavior(int prev_size, vector<vector<double>> sensor_fusio
   /* Predict other vehicles' location */
   for (const auto &sensor_state : sensor_fusion) {
     Vehicle pred = Vehicle(sensor_state);
-    pred.generate_prediction(prev_size);
+    pred.generate_prediction();
 
     predictions[sensor_state[SENSOR_FUSION_ID_IDX]] = pred;
   }
+
+  /* Future endpoint is the 1 second ahead from now.
+   * 'prev_size' is what we predicted in last cycle, but
+   * waiting to control Ego vehicle in this cycle. so the
+   * remaining time frame is (NOF_PATH_POINTS - prev_size) * 0.02
+   */
+  this->mFutureTimePeriod = 0.02 * (NOF_PATH_POINTS - prev_size);
 
   /* Iterate all possible behaviors for ego vehicle.
    * Calculate cost for every behavior.
@@ -82,6 +90,7 @@ void Vehicle::getNextBehavior(int prev_size, vector<vector<double>> sensor_fusio
   this->mCurrentState = best_trajectory[1].getCurrentState();
   this->mCurrentLane = best_trajectory[1].getCurrentLane();
   this->mVelocity = best_trajectory[1].getVelocity();
+  this->mAcceleration = best_trajectory[1].getAcceleration();
 
   /* Start a timer to protect ego vehicle from seemingly consecutive lane changing.
    */
@@ -108,6 +117,10 @@ double Vehicle::getS() {
 
 double Vehicle::getVelocity() {
   return mVelocity;
+}
+
+double Vehicle::getAcceleration() {
+  return mAcceleration;
 }
 
 
@@ -154,8 +167,8 @@ vector<int> Vehicle::successor_states() {
   return states;
 }
 
-void Vehicle::generate_prediction(int prev_size) {
-  mS += ((double)prev_size * TIME_INTERVAL * mVelocity);
+void Vehicle::generate_prediction() {
+  mS += ((double)NOF_PATH_POINTS * TIME_INTERVAL * mVelocity);
 }
 
 vector<Vehicle> Vehicle::generate_trajectory(int state,
@@ -185,13 +198,15 @@ vector<Vehicle> Vehicle::generate_trajectory(int state,
 }
 
 vector<Vehicle> Vehicle::keep_lane_trajectory(map<int, Vehicle>& predictions) {
-  vector<Vehicle> trajectory = {Vehicle(this->mCurrentLane, this->mS, this->mVelocity, this->mCurrentState)};
+  vector<Vehicle> trajectory = {Vehicle(this->mCurrentLane, this->mS,
+                                this->mVelocity, this->mAcceleration, this->mCurrentState)};
 
   vector<double> kinematics = get_kinematics(this->mCurrentLane, predictions);
   double new_s = kinematics[0];
   double new_v = kinematics[1];
+  double new_a = kinematics[2];
 
-  trajectory.emplace_back(this->mCurrentLane, new_s, new_v, STATE_KEEP_LANE);
+  trajectory.emplace_back(this->mCurrentLane, new_s, new_v, new_a, STATE_KEEP_LANE);
 
   return trajectory;
 }
@@ -205,16 +220,18 @@ vector<Vehicle> Vehicle::lane_change_trajectory(int state,
 
   for (it = predictions.begin(); it != predictions.end(); ++it) {
     next_lane_vehicle = it->second;
-    if (next_lane_vehicle.mS == this->mS &&
+    if (this->mS > next_lane_vehicle.mS &&
+        (this->mS - next_lane_vehicle.mS) < SAFE_DISTANCE_BEHIND_IN_S &&
         next_lane_vehicle.mCurrentLane == new_lane) {
       // There's a potential collision in new_lane, return empty trajectory.
       return trajectory;
     }
   }
 
-  trajectory.emplace_back(Vehicle(this->mCurrentLane, this->mS, this->mVelocity, this->mCurrentState));
+  trajectory.emplace_back(Vehicle(this->mCurrentLane, this->mS,
+                          this->mVelocity, this->mAcceleration, this->mCurrentState));
   vector<double> kinematics = get_kinematics(new_lane, predictions);
-  trajectory.emplace_back(Vehicle(new_lane, kinematics[0], kinematics[1], state));
+  trajectory.emplace_back(Vehicle(new_lane, kinematics[0], kinematics[1], kinematics[2], state));
 
   return trajectory;
 }
@@ -223,7 +240,9 @@ vector<Vehicle> Vehicle::prep_lane_change_trajectory(int state,
     map<int, Vehicle>& predictions) {
   double new_s;
   double new_v;
-  vector<Vehicle> trajectory = {Vehicle(this->mCurrentLane, this->mS, this->mVelocity, this->mCurrentState)};
+  double new_a;
+  vector<Vehicle> trajectory = {Vehicle(this->mCurrentLane, this->mS,
+                                this->mVelocity, this->mAcceleration, this->mCurrentState)};
 
   vector<double> curr_lane_kinematics = get_kinematics(this->mCurrentLane, predictions);
 
@@ -233,18 +252,21 @@ vector<Vehicle> Vehicle::prep_lane_change_trajectory(int state,
   if (vehicle_behind_too_close) {
     new_s = curr_lane_kinematics[0];
     new_v = curr_lane_kinematics[1];
+    new_a = curr_lane_kinematics[2];
   } else {
     vector<double> new_lane_kinematics = get_kinematics(new_lane, predictions);
     if (new_lane_kinematics[1] < curr_lane_kinematics[1]) {
       new_s = curr_lane_kinematics[0];
       new_v = curr_lane_kinematics[1];
+      new_a = curr_lane_kinematics[2];
     } else {
       new_s = new_lane_kinematics[0];
       new_v = new_lane_kinematics[1];
+      new_a = new_lane_kinematics[2];
     }
   }
 
-  trajectory.emplace_back(this->mCurrentLane, new_s, new_v, state);
+  trajectory.emplace_back(this->mCurrentLane, new_s, new_v, new_a, state);
 
   return trajectory;
 }
@@ -252,29 +274,31 @@ vector<Vehicle> Vehicle::prep_lane_change_trajectory(int state,
 vector<double> Vehicle::get_kinematics(int lane,
     map<int, Vehicle>& predictions) {
   Vehicle vehicle_ahead;
+  Vehicle vehicle_behind;
   double new_position;
   double new_velocity;
+  double new_accel;
+
+  double max_velocity_accel_limit = this->mVelocity + MAX_ALLOWED_ACCEL;
 
   bool vehicle_ahead_too_close = get_vehicle_ahead(lane, predictions, vehicle_ahead);
   if (vehicle_ahead_too_close) {
-    new_velocity = vehicle_ahead.mVelocity;
-    /* Slow down our ego vehicle, but try to avoid jerk */
-    if (fabs(new_velocity - this->mVelocity) > MAX_ALLOWED_ACCEL) {
-      new_velocity = this->mVelocity - MAX_ALLOWED_ACCEL;
-    }
-  } else {
-    new_velocity = this->mVelocity;
+    double max_velocity_in_front = (vehicle_ahead.mS - this->mS) +
+                          vehicle_ahead.mVelocity - this->mAcceleration / 2;
+    new_velocity = min(min(max_velocity_accel_limit, max_velocity_in_front), LEGAL_SPEED_LIMIT);
 
-    /* Accelerate our ego vehicle, but try to avoid jerk */
-    if (this->mVelocity < this->mMaxSpeedLimit) {
-      new_velocity += MAX_ALLOWED_ACCEL;
-    }
+  } else {
+    new_velocity = min(max_velocity_accel_limit, LEGAL_SPEED_LIMIT);
   }
 
-  /* distance = v*t + a*t*t/2, if acceleration is constant. */
-  new_position = this->mS + new_velocity + MAX_ALLOWED_ACCEL/2;
+  new_accel = (new_velocity - this->mVelocity) / (NOF_PATH_POINTS * TIME_INTERVAL);
 
-  return {new_position, new_velocity};
+  /* distance = v*t + a*t*t/2, if acceleration is constant.
+   * Here we have t = 1.
+   */
+  new_position = this->mS + new_velocity * this->mFutureTimePeriod + (new_accel * pow(this->mFutureTimePeriod, 2)) / 2;
+
+  return {new_position, new_velocity, new_accel};
 }
 
 bool Vehicle::get_vehicle_ahead(int lane,

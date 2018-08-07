@@ -208,7 +208,7 @@ int main() {
   double ref_vel = 0;
 
   Vehicle ego_vehicle;
-  ego_vehicle.configure(49.5, lane, {0, 1, 2});
+  ego_vehicle.configure(LEGAL_SPEED_LIMIT, lane, {0, 1, 2});
 
   h.onMessage([&ego_vehicle, &lane, &ref_vel, &map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
@@ -363,7 +363,7 @@ int main() {
 
           double x_add_on = 0;
 
-          for (int i = 1; i <= 50 - previous_path_x.size(); i++) {
+          for (int i = 1; i <= NOF_PATH_POINTS - previous_path_x.size(); i++) {
             double N = (target_dist / (0.02 * ref_vel/2.24));
             double x_point = x_add_on + (target_x / N);
             double y_point = spl(x_point);

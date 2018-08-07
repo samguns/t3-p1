@@ -29,6 +29,9 @@
 
 #define MIN_STAY_IN_LANE_PERIOD   100
 
+#define NOF_PATH_POINTS           50
+#define LEGAL_SPEED_LIMIT         49.5
+
 
 using namespace std;
 
@@ -45,7 +48,7 @@ class Vehicle {
 
   Vehicle();
   Vehicle(vector<double> sensored_state);
-  Vehicle(int lane, double s, double v, int state=STATE_INIT);
+  Vehicle(int lane, double s, double v, double a, int state=STATE_INIT);
   virtual ~Vehicle() {};
 
   /**
@@ -98,6 +101,12 @@ class Vehicle {
    */
   double getVelocity();
 
+  /**
+   * @fn getAcceleration
+   * @return Acceleration
+   */
+  double getAcceleration();
+
  private:
   int mCurrentState;
   int mCurrentLane;
@@ -109,11 +118,13 @@ class Vehicle {
   double mS;
   double mD;
   double mVelocity;
+  double mAcceleration;
+  double mFutureTimePeriod;
 
   int mMinStayInLaneCount;
 
   vector<int> successor_states();
-  void generate_prediction(int prev_size);
+  void generate_prediction();
   vector<Vehicle> generate_trajectory(int state, map<int, Vehicle>& predictions);
   vector<Vehicle> keep_lane_trajectory(map<int, Vehicle>& predictions);
   vector<Vehicle> lane_change_trajectory(int state, map<int, Vehicle>& predictions);
