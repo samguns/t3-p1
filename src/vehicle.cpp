@@ -271,7 +271,8 @@ vector<double> Vehicle::get_kinematics(int lane,
     }
   }
 
-  new_position = this->mS + TIME_INTERVAL * new_velocity;
+  /* distance = v*t + a*t*t/2, if acceleration is constant. */
+  new_position = this->mS + new_velocity + MAX_ALLOWED_ACCEL/2;
 
   return {new_position, new_velocity};
 }
