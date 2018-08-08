@@ -18,8 +18,7 @@
 
 #define TIME_INTERVAL             0.02
 
-#define SAFE_DISTANCE_AHEAD_IN_S  30
-#define SAFE_DISTANCE_BEHIND_IN_S 15
+#define SAFE_DISTANCE_IN_S        30
 #define MAX_ALLOWED_ACCEL         0.224
 
 #define LANE_WIDTH                4
@@ -27,7 +26,7 @@
 
 #define MAX_NOF_LANES             3
 
-#define MIN_STAY_IN_LANE_PERIOD   100
+#define MIN_STAY_IN_LANE_PERIOD   4
 
 #define NOF_PATH_POINTS           50
 #define LEGAL_SPEED_LIMIT         49.5
@@ -119,12 +118,11 @@ class Vehicle {
   double mD;
   double mVelocity;
   double mAcceleration;
-  double mFutureTimePeriod;
 
   int mMinStayInLaneCount;
 
   vector<int> successor_states();
-  void generate_prediction();
+  void generate_prediction(int prev_size);
   vector<Vehicle> generate_trajectory(int state, map<int, Vehicle>& predictions);
   vector<Vehicle> keep_lane_trajectory(map<int, Vehicle>& predictions);
   vector<Vehicle> lane_change_trajectory(int state, map<int, Vehicle>& predictions);

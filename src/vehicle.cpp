@@ -23,12 +23,16 @@ Vehicle::Vehicle(vector<double> sensored_state) :
 
   mVelocity = sqrt(vx*vx + vy*vy);
 
+  cout << "ID: " << sensored_state[SENSOR_FUSION_ID_IDX] << " mD: " << mD << endl;
+
   for (int lane = 0; lane < MAX_NOF_LANES; lane++) {
     if (mD < (LANE_HALF_WIDTH + LANE_WIDTH * lane + LANE_HALF_WIDTH) &&
         mD > (LANE_HALF_WIDTH + LANE_WIDTH * lane - LANE_HALF_WIDTH)) {
       mCurrentLane = lane;
+      cout << "mCurrentLane: " << mCurrentLane << " lane: " << lane << endl;
     }
   }
+  cout << endl;
 }
 
 Vehicle::Vehicle(int lane, double s, double v, double a, int state) :
@@ -55,17 +59,14 @@ void Vehicle::getNextBehavior(int prev_size, vector<vector<double>> sensor_fusio
   /* Predict other vehicles' location */
   for (const auto &sensor_state : sensor_fusion) {
     Vehicle pred = Vehicle(sensor_state);
-    pred.generate_prediction();
+    pred.generate_prediction(prev_size);
 
     predictions[sensor_state[SENSOR_FUSION_ID_IDX]] = pred;
   }
 
-  /* Future endpoint is the 1 second ahead from now.
-   * 'prev_size' is what we predicted in last cycle, but
-   * waiting to control Ego vehicle in this cycle. so the
-   * remaining time frame is (NOF_PATH_POINTS - prev_size) * 0.02
+  /* Future endpoint is the 1 second ahead from where our
+   * previous path ends.
    */
-  this->mFutureTimePeriod = 0.02 * (NOF_PATH_POINTS - prev_size);
 
   /* Iterate all possible behaviors for ego vehicle.
    * Calculate cost for every behavior.
@@ -93,10 +94,12 @@ void Vehicle::getNextBehavior(int prev_size, vector<vector<double>> sensor_fusio
   this->mAcceleration = best_trajectory[1].getAcceleration();
 
   /* Start a timer to protect ego vehicle from seemingly consecutive lane changing.
+   * That is, at least MIN_STAY_IN_LANE_PERIOD (4) seconds later can we attemp to
+   * change lane.
    */
   if (this->mCurrentState == STATE_LANE_CHANGE_LEFT ||
       this->mCurrentState == STATE_LANE_CHANGE_RIGHT) {
-    this->mMinStayInLaneCount = MIN_STAY_IN_LANE_PERIOD;
+    this->mMinStayInLaneCount = prev_size + MIN_STAY_IN_LANE_PERIOD * NOF_PATH_POINTS;
   }
 
   goal_lane = this->mCurrentLane;
@@ -167,8 +170,8 @@ vector<int> Vehicle::successor_states() {
   return states;
 }
 
-void Vehicle::generate_prediction() {
-  mS += ((double)NOF_PATH_POINTS * TIME_INTERVAL * mVelocity);
+void Vehicle::generate_prediction(int prev_size) {
+  mS += ((double)prev_size * TIME_INTERVAL * mVelocity);
 }
 
 vector<Vehicle> Vehicle::generate_trajectory(int state,
@@ -220,11 +223,11 @@ vector<Vehicle> Vehicle::lane_change_trajectory(int state,
 
   for (it = predictions.begin(); it != predictions.end(); ++it) {
     next_lane_vehicle = it->second;
-    if (this->mS > next_lane_vehicle.mS &&
-        (this->mS - next_lane_vehicle.mS) < SAFE_DISTANCE_BEHIND_IN_S &&
-        next_lane_vehicle.mCurrentLane == new_lane) {
-      // There's a potential collision in new_lane, return empty trajectory.
-      return trajectory;
+    if (next_lane_vehicle.mCurrentLane == new_lane) {
+      if (fabs(this->mS - next_lane_vehicle.mS) <= SAFE_DISTANCE_IN_S) {
+        // There's a potential collision in new_lane, return empty trajectory.
+        return trajectory;
+      }
     }
   }
 
@@ -248,7 +251,7 @@ vector<Vehicle> Vehicle::prep_lane_change_trajectory(int state,
 
   int new_lane = this->mCurrentLane + lane_direction[state];
   Vehicle vehicle_behind;
-  bool vehicle_behind_too_close = get_vehicle_behind(new_lane, predictions, vehicle_behind);
+  bool vehicle_behind_too_close = get_vehicle_behind(this->mCurrentLane, predictions, vehicle_behind);
   if (vehicle_behind_too_close) {
     new_s = curr_lane_kinematics[0];
     new_v = curr_lane_kinematics[1];
@@ -274,7 +277,6 @@ vector<Vehicle> Vehicle::prep_lane_change_trajectory(int state,
 vector<double> Vehicle::get_kinematics(int lane,
     map<int, Vehicle>& predictions) {
   Vehicle vehicle_ahead;
-  Vehicle vehicle_behind;
   double new_position;
   double new_velocity;
   double new_accel;
@@ -285,10 +287,10 @@ vector<double> Vehicle::get_kinematics(int lane,
   if (vehicle_ahead_too_close) {
     double max_velocity_in_front = (vehicle_ahead.mS - this->mS) +
                           vehicle_ahead.mVelocity - this->mAcceleration / 2;
-    new_velocity = min(min(max_velocity_accel_limit, max_velocity_in_front), LEGAL_SPEED_LIMIT);
+    new_velocity = min(min(max_velocity_accel_limit, max_velocity_in_front), this->mMaxSpeedLimit);
 
   } else {
-    new_velocity = min(max_velocity_accel_limit, LEGAL_SPEED_LIMIT);
+    new_velocity = min(max_velocity_accel_limit, this->mMaxSpeedLimit);
   }
 
   new_accel = (new_velocity - this->mVelocity) / (NOF_PATH_POINTS * TIME_INTERVAL);
@@ -296,7 +298,7 @@ vector<double> Vehicle::get_kinematics(int lane,
   /* distance = v*t + a*t*t/2, if acceleration is constant.
    * Here we have t = 1.
    */
-  new_position = this->mS + new_velocity * this->mFutureTimePeriod + (new_accel * pow(this->mFutureTimePeriod, 2)) / 2;
+  new_position = this->mS + new_velocity + new_accel / 2;
 
   return {new_position, new_velocity, new_accel};
 }
@@ -304,9 +306,10 @@ vector<double> Vehicle::get_kinematics(int lane,
 bool Vehicle::get_vehicle_ahead(int lane,
     map<int, Vehicle>& predictions, Vehicle &ahead) {
   /*
-   * Returns a true if a vehicle is found ahead of the current vehicle, false otherwise.
-   * The reference "ahead" is updated if a vehicle is found.
+   * Returns a true if a vehicle is found ahead of us, false otherwise.
+   * The reference "ahead" is updated to the closest vehicle.
    */
+  double min_distance = SAFE_DISTANCE_IN_S;
   bool found(false);
   Vehicle temp_vehicle;
   map<int, Vehicle>::const_iterator it;
@@ -315,11 +318,17 @@ bool Vehicle::get_vehicle_ahead(int lane,
 
     if (temp_vehicle.mD < (LANE_HALF_WIDTH + LANE_WIDTH * lane + LANE_HALF_WIDTH) &&
         temp_vehicle.mD > (LANE_HALF_WIDTH + LANE_WIDTH * lane - LANE_HALF_WIDTH)) {
-      if (temp_vehicle.mS > this->mS &&
-          (temp_vehicle.mS - this->mS) < SAFE_DISTANCE_AHEAD_IN_S) {
-        ahead = temp_vehicle;
-        found = true;
-        break;
+      if (temp_vehicle.mCurrentLane != lane) {
+        cout << "temp_vehicle.mD: " << temp_vehicle.mD << " currentLane " << temp_vehicle.mCurrentLane << " lane: "
+             << lane << endl;
+      }
+      if (temp_vehicle.mS > this->mS) {
+        double distance = temp_vehicle.mS - this->mS;
+        if (distance < min_distance) {
+          ahead = temp_vehicle;
+          min_distance = distance;
+          found = true;
+        }
       }
     }
   }
@@ -330,9 +339,10 @@ bool Vehicle::get_vehicle_ahead(int lane,
 bool Vehicle::get_vehicle_behind(int lane,
     map<int, Vehicle> &predictions, Vehicle &behind) {
   /*
-   * Returns a true if a vehicle is found behind of the current vehicle, false otherwise.
-   * The reference "behind" is updated if a vehicle is found.
+   * Returns a true if a vehicle is found behind us, false otherwise.
+   * The reference "behind" is updated to the closest vehicle.
    */
+  double min_distance = SAFE_DISTANCE_IN_S;
   bool found(false);
   Vehicle temp_vehicle;
   map<int, Vehicle>::const_iterator it;
@@ -341,11 +351,17 @@ bool Vehicle::get_vehicle_behind(int lane,
 
     if (temp_vehicle.mD < (LANE_HALF_WIDTH + LANE_WIDTH * lane + LANE_HALF_WIDTH) &&
         temp_vehicle.mD > (LANE_HALF_WIDTH + LANE_WIDTH * lane - LANE_HALF_WIDTH)) {
-      if (this->mS > temp_vehicle.mS &&
-          (this->mS - temp_vehicle.mS) < SAFE_DISTANCE_BEHIND_IN_S) {
-        behind = temp_vehicle;
-        found = true;
-        break;
+      if (temp_vehicle.mCurrentLane != lane) {
+        cout << "temp_vehicle.mD: " << temp_vehicle.mD << " currentLane " << temp_vehicle.mCurrentLane << " lane: "
+             << lane << endl;
+      }
+      if (this->mS > temp_vehicle.mS) {
+        double distance =  this->mS - temp_vehicle.mS;
+        if (distance < min_distance) {
+          behind = temp_vehicle;
+          min_distance = distance;
+          found = true;
+        }
       }
     }
   }
