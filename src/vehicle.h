@@ -119,6 +119,8 @@ class Vehicle {
   double mVelocity;
   double mAcceleration;
 
+  double mID;
+
   int mMinStayInLaneCount;
 
   vector<int> successor_states();
