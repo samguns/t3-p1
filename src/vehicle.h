@@ -19,6 +19,8 @@
 #define TIME_INTERVAL             0.02
 
 #define SAFE_DISTANCE_IN_S        30
+#define SAFE_DISTANCE_AHEAD_IN_S  30
+#define SAFE_DISTANCE_BEHIND_IN_S 15
 #define MAX_ALLOWED_ACCEL         0.224
 
 #define LANE_WIDTH                4
