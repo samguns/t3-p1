@@ -255,7 +255,7 @@ int main() {
             car_s = end_path_s;
           }
 
-          ego_vehicle.update(car_s, ref_vel);
+          ego_vehicle.update(car_s);
           ego_vehicle.getNextBehavior(prev_size, sensor_fusion, lane, ref_vel);
 
 //          bool too_close = false;

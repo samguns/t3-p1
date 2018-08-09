@@ -16,7 +16,7 @@ Vehicle::Vehicle() :
   mVelocity(0), mAcceleration(0)
 {}
 
-Vehicle::Vehicle(vector<double> sensored_state) :
+Vehicle::Vehicle(vector<double> sensored_state, double ego_s) :
   mID(sensored_state[SENSOR_FUSION_ID_IDX]),
   mS(sensored_state[SENSOR_FUSION_S_IDX]),
   mD(sensored_state[SENSOR_FUSION_D_IDX]) {
@@ -29,6 +29,18 @@ Vehicle::Vehicle(vector<double> sensored_state) :
     if (mD < (LANE_HALF_WIDTH + LANE_WIDTH * lane + LANE_HALF_WIDTH) &&
         mD > (LANE_HALF_WIDTH + LANE_WIDTH * lane - LANE_HALF_WIDTH)) {
       mCurrentLane = lane;
+    }
+  }
+
+  if ((ego_s + SAFE_DISTANCE_AHEAD_IN_S) >= MAX_S) {
+    if (mS <= SAFE_DISTANCE_AHEAD_IN_S) {
+      mS += MAX_S;
+    }
+  }
+
+  if (ego_s <= SAFE_DISTANCE_BEHIND_IN_S) {
+    if ((mS + SAFE_DISTANCE_BEHIND_IN_S) >= MAX_S) {
+      mS = MAX_S - mS;
     }
   }
 }
@@ -45,9 +57,8 @@ void Vehicle::configure(double max_speed, int currentLane, vector<int> lanes) {
   mCurrentLane = currentLane;
 }
 
-void Vehicle::update(double s, double v) {
+void Vehicle::update(double s) {
   mS = s;
-//  mVelocity = v;
 }
 
 void Vehicle::getNextBehavior(int prev_size, vector<vector<double>> sensor_fusion,
@@ -56,17 +67,13 @@ void Vehicle::getNextBehavior(int prev_size, vector<vector<double>> sensor_fusio
 
   /* Predict other vehicles' location */
   for (const auto &sensor_state : sensor_fusion) {
-    //if (sensor_state[SENSOR_FUSION_D_IDX] > 0) {
-      Vehicle pred = Vehicle(sensor_state);
+    if (sensor_state[SENSOR_FUSION_D_IDX] > 0) {
+      Vehicle pred = Vehicle(sensor_state, this->mS);
       pred.generate_prediction(prev_size);
 
       predictions[sensor_state[SENSOR_FUSION_ID_IDX]] = pred;
-    //}
+    }
   }
-
-  /* Future endpoint is the 1 second ahead from where our
-   * previous path ends.
-   */
 
   /* Iterate all possible behaviors for ego vehicle.
    * Calculate cost for every behavior.
@@ -75,18 +82,13 @@ void Vehicle::getNextBehavior(int prev_size, vector<vector<double>> sensor_fusio
   vector<double> costs;
   vector<vector<Vehicle>> final_trajectories;
   vector<int> states = successor_states();
-  cout << "current state: " << mCurrentState << " v: " << mVelocity << " a: " << mAcceleration << " lane: " << mCurrentLane << endl;
   for (const int& state : states) {
-    cout << " state: " << state;
     vector<Vehicle> trajectory = generate_trajectory(state, predictions);
     if (!trajectory.empty()) {
-      cout << " start v: " << trajectory[0].mVelocity << " end v: " << trajectory[1].mVelocity << endl;
       cost = calculate_cost(trajectory);
-      cout << " cost: " << cost << " from: " << trajectory[0].mCurrentLane << " to: " << trajectory[1].mCurrentLane << endl;
       costs.push_back(cost);
       final_trajectories.push_back(trajectory);
     }
-    cout << endl;
   }
 
   vector<double>::iterator best_cost = min_element(begin(costs), end(costs));
@@ -97,8 +99,8 @@ void Vehicle::getNextBehavior(int prev_size, vector<vector<double>> sensor_fusio
   this->mCurrentLane = best_trajectory[1].getCurrentLane();
   if (this->mCurrentState == STATE_PREP_LANE_CHANGE_LEFT ||
       this->mCurrentState == STATE_PREP_LANE_CHANGE_RIGHT) {
-    this->mVelocity = best_trajectory[0].getVelocity();
-    this->mAcceleration = best_trajectory[0].getAcceleration();
+    this->mVelocity = best_trajectory[2].getVelocity();
+    this->mAcceleration = best_trajectory[2].getAcceleration();
   } else {
     this->mVelocity = best_trajectory[1].getVelocity();
     this->mAcceleration = best_trajectory[1].getAcceleration();
@@ -144,7 +146,6 @@ vector<int> Vehicle::successor_states() {
 
   if (mMinStayInLaneCount > 0) {
     mMinStayInLaneCount--;
-    cout << "mMinStayInLaneCount: " << mMinStayInLaneCount << endl;
     return states;
   }
 
@@ -162,14 +163,12 @@ vector<int> Vehicle::successor_states() {
 
     case STATE_PREP_LANE_CHANGE_LEFT:
       if (mCurrentLane != mLeftMostLane) {
-        states.push_back(STATE_PREP_LANE_CHANGE_LEFT);
         states.push_back(STATE_LANE_CHANGE_LEFT);
       }
       break;
 
     case STATE_PREP_LANE_CHANGE_RIGHT:
       if (mCurrentLane != mRightMostLane) {
-        states.push_back(STATE_PREP_LANE_CHANGE_RIGHT);
         states.push_back(STATE_LANE_CHANGE_RIGHT);
       }
       break;
@@ -235,7 +234,7 @@ vector<Vehicle> Vehicle::lane_change_trajectory(int state,
   for (it = predictions.begin(); it != predictions.end(); ++it) {
     next_lane_vehicle = it->second;
     if (next_lane_vehicle.mCurrentLane == new_lane) {
-      if (fabs(this->mS - next_lane_vehicle.mS) <= SAFE_DISTANCE_IN_S) {
+      if (fabs(this->mS - next_lane_vehicle.mS) <= SAFE_DISTANCE_BEHIND_IN_S) {
         // There's a potential collision in new_lane, return empty trajectory.
         return trajectory;
       }
@@ -281,6 +280,9 @@ vector<Vehicle> Vehicle::prep_lane_change_trajectory(int state,
   }
 
   trajectory.emplace_back(this->mCurrentLane, new_s, new_v, new_a, state);
+  trajectory.emplace_back(this->mCurrentLane,
+                          curr_lane_kinematics[0], curr_lane_kinematics[1],
+                          curr_lane_kinematics[2], state);
 
   return trajectory;
 }
@@ -297,25 +299,15 @@ vector<double> Vehicle::get_kinematics(int lane,
 
   bool vehicle_ahead_too_close = get_vehicle_ahead(lane, predictions, vehicle_ahead);
   if (vehicle_ahead_too_close) {
-    double max_velocity_in_front = (vehicle_ahead.mS - this->mS - 24) +
+    double max_velocity_in_front = (vehicle_ahead.mS - this->mS - SAFE_BUFFER_IN_S) +
         (vehicle_ahead.mVelocity) - this->mAcceleration / 2;
     new_velocity = min(min(max_velocity_accel_limit, max_velocity_in_front), this->mMaxSpeedLimit);
     new_velocity = max(new_velocity, max_velocity_brake_limit);
-    cout << " max_velocity_in_front: " << max_velocity_in_front << " max_velocity_accel_limit: " << max_velocity_accel_limit << endl;
-
-    cout << " ID: " << vehicle_ahead.mID << " velocity: " << vehicle_ahead.mVelocity << " ahead s: " << vehicle_ahead.mS << " lane: " << lane << " my s: " << this->mS;
-    cout << " new_velocity: " << new_velocity << " my velocity: " << this->mVelocity << " my acc: " << this->mAcceleration << endl;
-
   } else {
     new_velocity = min(max_velocity_accel_limit, this->mMaxSpeedLimit);
-    cout << " No obstacles, new velocity: " << new_velocity << endl;
   }
 
   new_accel = (new_velocity - this->mVelocity) / (NOF_PATH_POINTS * TIME_INTERVAL);
-
-  if (fabs(new_accel) > MAX_ALLOWED_ACCEL) {
-    cout << "FUCKKKKKKKKKKK" << endl;
-  }
 
   /* distance = v*t + a*t*t/2, if acceleration is constant.
    * Here we have t = 1.
@@ -337,11 +329,6 @@ bool Vehicle::get_vehicle_ahead(int lane,
   for (it = predictions.begin(); it != predictions.end(); ++it) {
     temp_vehicle = it->second;
 
-    cout << " ID: " << temp_vehicle.mID << " lane: " << temp_vehicle.mCurrentLane <<
-          " s: " << temp_vehicle.mS << " check lane: " << lane << " check s: " << this->mS << endl;
-
-//    if (temp_vehicle.mD < (LANE_HALF_WIDTH + LANE_WIDTH * lane + LANE_HALF_WIDTH) &&
-//        temp_vehicle.mD > (LANE_HALF_WIDTH + LANE_WIDTH * lane - LANE_HALF_WIDTH)) {
     if (lane == temp_vehicle.mCurrentLane) {
       if (temp_vehicle.mS > this->mS &&
           (temp_vehicle.mS - this->mS) < SAFE_DISTANCE_AHEAD_IN_S) {
@@ -366,9 +353,6 @@ bool Vehicle::get_vehicle_behind(int lane,
   map<int, Vehicle>::const_iterator it;
   for (it = predictions.begin(); it != predictions.end(); ++it) {
     temp_vehicle = it->second;
-
-    cout << " behind ID: " << temp_vehicle.mID << " lane: " << temp_vehicle.mCurrentLane <<
-         " s: " << temp_vehicle.mS << " check lane: " << lane << " check s: " << this->mS << endl;
 
     if (lane == temp_vehicle.mCurrentLane) {
       if (this->mS > temp_vehicle.mS &&

@@ -19,7 +19,7 @@ double calculate_cost(const vector<Vehicle>& trajectory) {
 
   double cost(0.0);
 
-  cost += (REACH_GOAL * goal_distance_cost(trajectory_data));
+  //cost += (REACH_GOAL * goal_distance_cost(trajectory_data));
   cost += (EFFICIENCY * inefficiency_cost(trajectory_data));
 
   return cost;
@@ -69,11 +69,5 @@ static double goal_distance_cost(map<string, double>& data) {
 }
 
 static double inefficiency_cost(map<string, double>& data) {
-  double cost(0.0);
-
-  if (data["intended_speed"] < data["current_speed"]) {
-    cost = 1;
-  }
-
-  return cost;
+  return (data["current_speed"] - data["intended_speed"]);
 }

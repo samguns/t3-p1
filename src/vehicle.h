@@ -18,17 +18,18 @@
 
 #define TIME_INTERVAL             0.02
 
-#define SAFE_DISTANCE_IN_S        30
 #define SAFE_DISTANCE_AHEAD_IN_S  30
 #define SAFE_DISTANCE_BEHIND_IN_S 15
+#define SAFE_BUFFER_IN_S          25
 #define MAX_ALLOWED_ACCEL         0.1 /* 0.1 meters/^s */
+#define MAX_S                     6945.554
 
 #define LANE_WIDTH                4
 #define LANE_HALF_WIDTH           2
 
 #define MAX_NOF_LANES             3
 
-#define MIN_STAY_IN_LANE_PERIOD   0
+#define MIN_STAY_IN_LANE_PERIOD   2
 
 #define NOF_PATH_POINTS           50
 #define LEGAL_SPEED_LIMIT         22.1 /* Approximate 49.5 miles/hour */
@@ -48,7 +49,7 @@ class Vehicle {
   };
 
   Vehicle();
-  Vehicle(vector<double> sensored_state);
+  Vehicle(vector<double> sensored_state, double ego_s);
   Vehicle(int lane, double s, double v, double a, int state=STATE_INIT);
   virtual ~Vehicle() {};
 
@@ -62,9 +63,8 @@ class Vehicle {
   /**
    * @fn update
    * @param s
-   * @param v
    */
-  void update(double s, double v);
+  void update(double s);
 
   /**
    * @fn getNextBehavior
