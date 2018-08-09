@@ -95,8 +95,14 @@ void Vehicle::getNextBehavior(int prev_size, vector<vector<double>> sensor_fusio
   vector<Vehicle> best_trajectory = final_trajectories[best_idx];
   this->mCurrentState = best_trajectory[1].getCurrentState();
   this->mCurrentLane = best_trajectory[1].getCurrentLane();
-  this->mVelocity = best_trajectory[1].getVelocity();
-  this->mAcceleration = best_trajectory[1].getAcceleration();
+  if (this->mCurrentState == STATE_PREP_LANE_CHANGE_LEFT ||
+      this->mCurrentState == STATE_PREP_LANE_CHANGE_RIGHT) {
+    this->mVelocity = best_trajectory[0].getVelocity();
+    this->mAcceleration = best_trajectory[0].getAcceleration();
+  } else {
+    this->mVelocity = best_trajectory[1].getVelocity();
+    this->mAcceleration = best_trajectory[1].getAcceleration();
+  }
 
   /* Start a timer to protect ego vehicle from seemingly consecutive lane changing.
    * That is, at least MIN_STAY_IN_LANE_PERIOD (2) seconds later can we attempt to
