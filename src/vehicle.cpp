@@ -32,6 +32,7 @@ Vehicle::Vehicle(vector<double> sensored_state, double ego_s) :
     }
   }
 
+  /* Workaround when facing enf of road circle */
   if ((ego_s + SAFE_DISTANCE_AHEAD_IN_S) >= MAX_S) {
     if (mS <= SAFE_DISTANCE_AHEAD_IN_S) {
       mS += MAX_S;
@@ -85,7 +86,7 @@ void Vehicle::getNextBehavior(int prev_size, vector<vector<double>> sensor_fusio
   for (const int& state : states) {
     vector<Vehicle> trajectory = generate_trajectory(state, predictions);
     if (!trajectory.empty()) {
-      cost = calculate_cost(trajectory);
+      cost = calculate_cost(trajectory, predictions);
       costs.push_back(cost);
       final_trajectories.push_back(trajectory);
     }

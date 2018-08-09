@@ -11,6 +11,7 @@
 
 using namespace std;
 
-double calculate_cost(const vector<Vehicle>& trajectory);
+double calculate_cost(const vector<Vehicle>& trajectory,
+                      map<int, Vehicle>& predictions);
 
 #endif //PATH_PLANNING_COST_H
