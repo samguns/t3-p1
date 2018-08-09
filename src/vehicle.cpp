@@ -12,7 +12,8 @@
 
 
 Vehicle::Vehicle() :
-  mCurrentState(STATE_INIT), mMinStayInLaneCount(0), mAcceleration(0)
+  mCurrentState(STATE_INIT), mMinStayInLaneCount(0),
+  mVelocity(0), mAcceleration(0)
 {}
 
 Vehicle::Vehicle(vector<double> sensored_state) :
@@ -22,7 +23,7 @@ Vehicle::Vehicle(vector<double> sensored_state) :
   double vx = sensored_state[SENSOR_FUSION_VX_IDX];
   double vy = sensored_state[SENSOR_FUSION_VY_IDX];
 
-  mVelocity = sqrt(vx*vx + vy*vy) * 2.24;
+  mVelocity = sqrt(vx*vx + vy*vy);
 
   for (int lane = 0; lane < MAX_NOF_LANES; lane++) {
     if (mD < (LANE_HALF_WIDTH + LANE_WIDTH * lane + LANE_HALF_WIDTH) &&
@@ -46,7 +47,7 @@ void Vehicle::configure(double max_speed, int currentLane, vector<int> lanes) {
 
 void Vehicle::update(double s, double v) {
   mS = s;
-  //mVelocity = v;
+//  mVelocity = v;
 }
 
 void Vehicle::getNextBehavior(int prev_size, vector<vector<double>> sensor_fusion,
@@ -55,12 +56,12 @@ void Vehicle::getNextBehavior(int prev_size, vector<vector<double>> sensor_fusio
 
   /* Predict other vehicles' location */
   for (const auto &sensor_state : sensor_fusion) {
-    if (sensor_state[SENSOR_FUSION_D_IDX] > 0) {
+    //if (sensor_state[SENSOR_FUSION_D_IDX] > 0) {
       Vehicle pred = Vehicle(sensor_state);
       pred.generate_prediction(prev_size);
 
       predictions[sensor_state[SENSOR_FUSION_ID_IDX]] = pred;
-    }
+    //}
   }
 
   /* Future endpoint is the 1 second ahead from where our
@@ -74,9 +75,9 @@ void Vehicle::getNextBehavior(int prev_size, vector<vector<double>> sensor_fusio
   vector<double> costs;
   vector<vector<Vehicle>> final_trajectories;
   vector<int> states = successor_states();
-  cout << "current state: " << mCurrentState << endl;
+  cout << "current state: " << mCurrentState << " v: " << mVelocity << " a: " << mAcceleration << " lane: " << mCurrentLane << endl;
   for (const int& state : states) {
-    cout << " state: " << state << " current v: " << mVelocity;
+    cout << " state: " << state;
     vector<Vehicle> trajectory = generate_trajectory(state, predictions);
     if (!trajectory.empty()) {
       cout << " start v: " << trajectory[0].mVelocity << " end v: " << trajectory[1].mVelocity << endl;
@@ -98,7 +99,7 @@ void Vehicle::getNextBehavior(int prev_size, vector<vector<double>> sensor_fusio
   this->mAcceleration = best_trajectory[1].getAcceleration();
 
   /* Start a timer to protect ego vehicle from seemingly consecutive lane changing.
-   * That is, at least MIN_STAY_IN_LANE_PERIOD (4) seconds later can we attempt to
+   * That is, at least MIN_STAY_IN_LANE_PERIOD (2) seconds later can we attempt to
    * change lane.
    */
   if (this->mCurrentState == STATE_LANE_CHANGE_LEFT ||
@@ -255,7 +256,7 @@ vector<Vehicle> Vehicle::prep_lane_change_trajectory(int state,
 
   int new_lane = this->mCurrentLane + lane_direction[state];
   Vehicle vehicle_behind;
-  bool vehicle_behind_too_close = get_vehicle_behind(new_lane, predictions, vehicle_behind);
+  bool vehicle_behind_too_close = get_vehicle_behind(this->mCurrentLane, predictions, vehicle_behind);
   if (vehicle_behind_too_close) {
     new_s = curr_lane_kinematics[0];
     new_v = curr_lane_kinematics[1];
@@ -286,22 +287,29 @@ vector<double> Vehicle::get_kinematics(int lane,
   double new_accel;
 
   double max_velocity_accel_limit = this->mVelocity + MAX_ALLOWED_ACCEL;
+  double max_velocity_brake_limit = this->mVelocity - MAX_ALLOWED_ACCEL;
 
   bool vehicle_ahead_too_close = get_vehicle_ahead(lane, predictions, vehicle_ahead);
   if (vehicle_ahead_too_close) {
-    double max_velocity_in_front = (vehicle_ahead.mS - this->mS) +
-                          vehicle_ahead.mVelocity - this->mAcceleration / 2;
+    double max_velocity_in_front = (vehicle_ahead.mS - this->mS - 24) +
+        (vehicle_ahead.mVelocity) - this->mAcceleration / 2;
     new_velocity = min(min(max_velocity_accel_limit, max_velocity_in_front), this->mMaxSpeedLimit);
+    new_velocity = max(new_velocity, max_velocity_brake_limit);
+    cout << " max_velocity_in_front: " << max_velocity_in_front << " max_velocity_accel_limit: " << max_velocity_accel_limit << endl;
+
+    cout << " ID: " << vehicle_ahead.mID << " velocity: " << vehicle_ahead.mVelocity << " ahead s: " << vehicle_ahead.mS << " lane: " << lane << " my s: " << this->mS;
+    cout << " new_velocity: " << new_velocity << " my velocity: " << this->mVelocity << " my acc: " << this->mAcceleration << endl;
 
   } else {
     new_velocity = min(max_velocity_accel_limit, this->mMaxSpeedLimit);
+    cout << " No obstacles, new velocity: " << new_velocity << endl;
   }
 
   new_accel = (new_velocity - this->mVelocity) / (NOF_PATH_POINTS * TIME_INTERVAL);
-  //if (fabs(new_accel) > 10) {
-    cout << " ID: " << vehicle_ahead.mID << " velocity: " << vehicle_ahead.mVelocity << " ahead s: " << vehicle_ahead.mS << " lane: " << lane << " my s: " << this->mS;
-    cout << " new_accel: " << new_accel << " new_velocity: " << new_velocity << " my velocity: " << this->mVelocity << " my acc: " << this->mAcceleration << endl;
-  //}
+
+  if (fabs(new_accel) > MAX_ALLOWED_ACCEL) {
+    cout << "FUCKKKKKKKKKKK" << endl;
+  }
 
   /* distance = v*t + a*t*t/2, if acceleration is constant.
    * Here we have t = 1.
@@ -322,6 +330,9 @@ bool Vehicle::get_vehicle_ahead(int lane,
   map<int, Vehicle>::const_iterator it;
   for (it = predictions.begin(); it != predictions.end(); ++it) {
     temp_vehicle = it->second;
+
+    cout << " ID: " << temp_vehicle.mID << " lane: " << temp_vehicle.mCurrentLane <<
+          " s: " << temp_vehicle.mS << " check lane: " << lane << " check s: " << this->mS << endl;
 
 //    if (temp_vehicle.mD < (LANE_HALF_WIDTH + LANE_WIDTH * lane + LANE_HALF_WIDTH) &&
 //        temp_vehicle.mD > (LANE_HALF_WIDTH + LANE_WIDTH * lane - LANE_HALF_WIDTH)) {
@@ -349,6 +360,9 @@ bool Vehicle::get_vehicle_behind(int lane,
   map<int, Vehicle>::const_iterator it;
   for (it = predictions.begin(); it != predictions.end(); ++it) {
     temp_vehicle = it->second;
+
+    cout << " behind ID: " << temp_vehicle.mID << " lane: " << temp_vehicle.mCurrentLane <<
+         " s: " << temp_vehicle.mS << " check lane: " << lane << " check s: " << this->mS << endl;
 
     if (lane == temp_vehicle.mCurrentLane) {
       if (this->mS > temp_vehicle.mS &&

@@ -8,6 +8,7 @@
 
 static const double REACH_GOAL = pow(10, 1);
 static const double EFFICIENCY = pow(10, 3);
+static const double GOAL_S = 6945.554;
 
 static map<string, double> get_helper_data(const vector<Vehicle>& trajectory);
 static double goal_distance_cost(map<string, double>& data);
@@ -43,7 +44,7 @@ static map<string, double> get_helper_data(const vector<Vehicle>& trajectory) {
 
   auto final_lane = (double)trajectory_end.getCurrentLane();
 
-  double distance_to_goal = trajectory_end.getS() - trajectory_start.getS();
+  double distance_to_goal = GOAL_S - trajectory_end.getS();
 
   trajectory_data["intended_lane"] = intended_lane;
   trajectory_data["final_lane"] = final_lane;

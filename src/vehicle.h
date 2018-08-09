@@ -21,17 +21,17 @@
 #define SAFE_DISTANCE_IN_S        30
 #define SAFE_DISTANCE_AHEAD_IN_S  30
 #define SAFE_DISTANCE_BEHIND_IN_S 15
-#define MAX_ALLOWED_ACCEL         0.224
+#define MAX_ALLOWED_ACCEL         0.1 /* 0.1 meters/^s */
 
 #define LANE_WIDTH                4
 #define LANE_HALF_WIDTH           2
 
 #define MAX_NOF_LANES             3
 
-#define MIN_STAY_IN_LANE_PERIOD   4
+#define MIN_STAY_IN_LANE_PERIOD   0
 
 #define NOF_PATH_POINTS           50
-#define LEGAL_SPEED_LIMIT         49.5
+#define LEGAL_SPEED_LIMIT         22.1 /* Approximate 49.5 miles/hour */
 
 
 using namespace std;

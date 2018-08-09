@@ -364,7 +364,7 @@ int main() {
           double x_add_on = 0;
 
           for (int i = 1; i <= NOF_PATH_POINTS - previous_path_x.size(); i++) {
-            double N = (target_dist / (0.02 * ref_vel/2.24));
+            double N = (target_dist / (0.02 * ref_vel));
             double x_point = x_add_on + (target_x / N);
             double y_point = spl(x_point);
 
