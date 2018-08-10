@@ -8,14 +8,17 @@
 
 //static const double REACH_GOAL = pow(10, 1);
 static const double EFFICIENCY = pow(10, 5);
-static const double DENSITY = pow(10, 1);
+static const double DENSITY = pow(10, 2);
+static const double SPEED = pow(10, 1);
 static const double GOAL_S = 6945.554;
+static const double CHECKING_RANGE = 100;
 
 static map<string, double> get_helper_data(const vector<Vehicle>& trajectory,
                                            map<int, Vehicle>& predictions);
 //static double goal_distance_cost(map<string, double>& data);
 static double inefficiency_cost(map<string, double>& data);
-static double traffic_cost(map<string, double>& data);
+static double traffic_pool_cost(map<string, double>& data);
+static double lane_speed_cost(map<string, double>& data);
 
 double calculate_cost(const vector<Vehicle>& trajectory,
                       map<int, Vehicle>& predictions) {
@@ -25,7 +28,8 @@ double calculate_cost(const vector<Vehicle>& trajectory,
   double cost(0.0);
 
   cost += (EFFICIENCY * inefficiency_cost(trajectory_data));
-  cost += (DENSITY * traffic_cost(trajectory_data));
+  cost += (DENSITY * traffic_pool_cost(trajectory_data));
+  cost += (SPEED * lane_speed_cost(trajectory_data));
 
   return cost;
 }
@@ -61,7 +65,7 @@ static map<string, double> get_helper_data(const vector<Vehicle>& trajectory,
 
     if (temp_vehicle.getCurrentLane() == intended_lane) {
       if ((temp_vehicle.getS() > trajectory_start.getS()) &&
-          (temp_vehicle.getS() - trajectory_start.getS() <= 100)) {
+          (temp_vehicle.getS() - trajectory_start.getS() <= CHECKING_RANGE)) {
         vehicles_in_lane += 1.0;
 
         double speed = temp_vehicle.getVelocity();
@@ -100,8 +104,10 @@ static double inefficiency_cost(map<string, double>& data) {
   return (data["current_speed"] - data["intended_speed"]);
 }
 
-static double traffic_cost(map<string, double>& data) {
-  double density = 1 - exp(-(data["vehicles_in_lane"]));
+static double traffic_pool_cost(map<string, double>& data) {
+  return(1 - exp(-(data["vehicles_in_lane"])));
+}
 
-  return density;
+static double lane_speed_cost(map<string, double>& data) {
+  return (data["slowest_speed_in_lane"] / LEGAL_SPEED_LIMIT);
 }

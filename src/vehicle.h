@@ -32,7 +32,7 @@
 #define MIN_STAY_IN_LANE_PERIOD   2
 
 #define NOF_PATH_POINTS           50
-#define LEGAL_SPEED_LIMIT         22.1 /* Approximate 49.5 miles/hour */
+#define LEGAL_SPEED_LIMIT         22.1 /* Approximate 49.5 MPH, which is about 80 KMH */
 
 
 using namespace std;
