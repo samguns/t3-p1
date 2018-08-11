@@ -32,6 +32,8 @@ Vehicle::Vehicle(vector<double> sensored_state, double ego_s) :
     }
   }
 
+//  cout << "ID: " << mID << " s: " << mS << " ego_s: " << ego_s << endl;
+
   /* Workaround when facing enf of road circle */
   if ((ego_s + SAFE_DISTANCE_AHEAD_IN_S) >= MAX_S) {
     if (mS <= SAFE_DISTANCE_AHEAD_IN_S) {
@@ -39,8 +41,8 @@ Vehicle::Vehicle(vector<double> sensored_state, double ego_s) :
     }
   }
 
-  if (ego_s <= SAFE_DISTANCE_BEHIND_IN_S) {
-    if ((mS + SAFE_DISTANCE_BEHIND_IN_S) >= MAX_S) {
+  if (ego_s <= SAFE_BUFFER_IN_S) {
+    if ((mS + SAFE_BUFFER_IN_S) >= MAX_S) {
       mS = MAX_S - mS;
     }
   }
@@ -82,15 +84,20 @@ void Vehicle::getNextBehavior(int prev_size, vector<vector<double>> sensor_fusio
   double cost;
   vector<double> costs;
   vector<vector<Vehicle>> final_trajectories;
+//  cout << "current state: " << mCurrentState << " current lane: " << mCurrentLane << endl;
   vector<int> states = successor_states();
   for (const int& state : states) {
+//    cout << " state: " << state << endl;
     vector<Vehicle> trajectory = generate_trajectory(state, predictions);
     if (!trajectory.empty()) {
       cost = calculate_cost(trajectory, predictions);
+//      cout << " cost: " << cost << " from " << trajectory[0].mCurrentLane << " to " << trajectory[1].mCurrentLane << endl;
       costs.push_back(cost);
       final_trajectories.push_back(trajectory);
     }
   }
+
+//  cout << endl << endl;
 
   vector<double>::iterator best_cost = min_element(begin(costs), end(costs));
   int best_idx = distance(begin(costs), best_cost);
@@ -351,9 +358,12 @@ bool Vehicle::get_vehicle_ahead(int lane,
    */
   bool found(false);
   Vehicle temp_vehicle;
+//  cout << " " << __func__ << " check lane: " << lane << endl;
   map<int, Vehicle>::const_iterator it;
   for (it = predictions.begin(); it != predictions.end(); ++it) {
     temp_vehicle = it->second;
+
+//    cout << " id: " << temp_vehicle.mID << " lane: " << temp_vehicle.mCurrentLane << " s: " << temp_vehicle.mS << endl;
 
     if (lane == temp_vehicle.mCurrentLane) {
       if (temp_vehicle.mS > this->mS &&
@@ -376,9 +386,12 @@ bool Vehicle::get_vehicle_behind(int lane,
    */
   bool found(false);
   Vehicle temp_vehicle;
+//  cout << " " << __func__ << " check lane: " << lane << endl;
   map<int, Vehicle>::const_iterator it;
   for (it = predictions.begin(); it != predictions.end(); ++it) {
     temp_vehicle = it->second;
+
+//    cout << " id: " << temp_vehicle.mID << " lane: " << temp_vehicle.mCurrentLane << " s: " << temp_vehicle.mS << endl;
 
     if (lane == temp_vehicle.mCurrentLane) {
       if (this->mS > temp_vehicle.mS &&
