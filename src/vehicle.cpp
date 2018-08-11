@@ -229,15 +229,40 @@ vector<Vehicle> Vehicle::lane_change_trajectory(int state,
     map<int, Vehicle>& predictions) {
   vector<Vehicle> trajectory;
   int new_lane = this->mCurrentLane + lane_direction[state];
+  int next_to_new_lane = new_lane + lane_direction[state];
   Vehicle next_lane_vehicle;
   map<int, Vehicle>::const_iterator it;
 
   for (it = predictions.begin(); it != predictions.end(); ++it) {
     next_lane_vehicle = it->second;
     if (next_lane_vehicle.mCurrentLane == new_lane) {
-      if (fabs(this->mS - next_lane_vehicle.mS) <= SAFE_DISTANCE_BEHIND_IN_S) {
+      if (this->mS > next_lane_vehicle.mS &&
+          this->mS - next_lane_vehicle.mS <= SAFE_DISTANCE_BEHIND_IN_S) {
         // There's a potential collision in new_lane, return empty trajectory.
         return trajectory;
+      }
+
+      if (this->mS < next_lane_vehicle.mS &&
+          next_lane_vehicle.mS - this->mS <= SAFE_DISTANCE_AHEAD_IN_S) {
+        return trajectory;
+      }
+    }
+
+    /* We should also check vehicles in the lane next to our intended lane.
+     */
+    if (next_to_new_lane >= this->mLeftMostLane &&
+        next_to_new_lane <= this->mRightMostLane) {
+      if (next_lane_vehicle.mCurrentLane == next_to_new_lane) {
+        if (this->mS > next_lane_vehicle.mS &&
+            this->mS - next_lane_vehicle.mS <= SAFE_DISTANCE_BEHIND_IN_S) {
+          return trajectory;
+        }
+
+        if (this->mS < next_lane_vehicle.mS &&
+            next_lane_vehicle.mS - this->mS <= SAFE_DISTANCE_AHEAD_IN_S) {
+          return trajectory;
+        }
+
       }
     }
   }
